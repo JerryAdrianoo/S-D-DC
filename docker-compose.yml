@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  # Web Application - Nginx
+  web:
+    build: ./web
+    container_name: incident_web
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    networks:
+      - incident_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # API Service - Node.js
+  api:
+    build: ./api
+    container_name: incident_api
+    ports:
+      - "3000:3000"
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      - DB_HOST=database
+      - DB_PORT=5432
+      - DB_NAME=incidents
+      - DB_USER=incident_user
+      - DB_PASS=incident_pass
+    networks:
+      - incident_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  # Database - PostgreSQL
+  database:
+    image: postgres:13
+    container_name: incident_db
+    environment:
+      - POSTGRES_DB=incidents
+      - POSTGRES_USER=incident_user
+      - POSTGRES_PASSWORD=incident_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - incident_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U incident_user -d incidents"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Monitor Service - Para demonstração
+  monitor:
+    image: alpine:latest
+    container_name: incident_monitor
+    command: tail -f /dev/null  # Keeps container running
+    volumes:
+      - ./scripts:/scripts
+      - ./logs:/logs
+    networks:
+      - incident_network
+    depends_on:
+      - web
+      - api
+      - database
+    restart: unless-stopped
+
+networks:
+  incident_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
